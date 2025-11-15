@@ -5,7 +5,7 @@ const STORAGE_KEY = 'code_files';
 
 // Configuration - Load from environment variables
 const AI_PROVIDER = import.meta.env.VITE_AI_PROVIDER || 'openai'; // 'openai', 'anthropic', 'google', 'custom'
-const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || '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';
+const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || '';
 const OPENAI_BASE_URL = import.meta.env.VITE_OPENAI_BASE_URL || 'https://api.openai.com/v1';
 const OPENAI_MODEL = import.meta.env.VITE_OPENAI_MODEL || 'gpt-4o'; // or 'gpt-4-turbo' or 'gpt-3.5-turbo'
 
