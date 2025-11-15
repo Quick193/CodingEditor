@@ -1,0 +1,428 @@
+// Base44 API Client
+// Configure your API endpoint and credentials in .env file
+
+const STORAGE_KEY = 'base44_code_files';
+
+// Configuration - Load from environment variables
+const BASE44_API_URL = import.meta.env.VITE_BASE44_API_URL || 'https://api.base44.com/v1';
+const BASE44_API_KEY = import.meta.env.VITE_BASE44_API_KEY || '';
+const BASE44_PROJECT_ID = import.meta.env.VITE_BASE44_PROJECT_ID || '';
+
+// Helper functions for localStorage
+const getFiles = () => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch (error) {
+    console.error('Error reading files from localStorage:', error);
+    return [];
+  }
+};
+
+const saveFiles = (files) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(files));
+  } catch (error) {
+    console.error('Error saving files to localStorage:', error);
+  }
+};
+
+// API request helper
+const apiRequest = async (endpoint, options = {}) => {
+  const url = `${BASE44_API_URL}${endpoint}`;
+  const headers = {
+    'Content-Type': 'application/json',
+    ...options.headers,
+  };
+
+  if (BASE44_API_KEY) {
+    headers['Authorization'] = `Bearer ${BASE44_API_KEY}`;
+  }
+
+  if (BASE44_PROJECT_ID) {
+    headers['X-Project-Id'] = BASE44_PROJECT_ID;
+  }
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ message: response.statusText }));
+      throw new Error(errorData.message || `API request failed: ${response.statusText}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('API request error:', error);
+    throw error;
+  }
+};
+
+// Check if API is configured
+const isApiConfigured = () => {
+  return !!(BASE44_API_KEY && BASE44_API_URL && BASE44_API_URL !== 'https://api.base44.com/v1');
+};
+
+// Fallback to mock responses if API is not configured
+const generateMockAIResponse = async (prompt, response_json_schema = null) => {
+  await new Promise(resolve => setTimeout(resolve, 500));
+  
+  if (response_json_schema) {
+    if (response_json_schema.properties?.suggestions) {
+      return {
+        suggestions: [
+          '// AI generated code suggestion 1\n' + prompt.substring(0, 100),
+          '// AI generated code suggestion 2\n' + prompt.substring(0, 100),
+          '// AI generated code suggestion 3\n' + prompt.substring(0, 100)
+        ]
+      };
+    }
+    if (response_json_schema.properties?.refactorings) {
+      return {
+        refactorings: [
+          {
+            title: 'Simplify Code Structure',
+            category: 'simplification',
+            explanation: 'This refactoring improves code readability by simplifying the structure.',
+            impact: 'Reduces complexity by 20%',
+            refactoredCode: '// Refactored code will appear here'
+          }
+        ]
+      };
+    }
+    if (response_json_schema.properties?.rootCause) {
+      return {
+        rootCause: 'The error occurs due to an undefined variable or missing import.',
+        lineNumber: 1,
+        suggestion: 'Ensure all variables are properly declared before use.',
+        fixedCode: '// Fixed code will appear here'
+      };
+    }
+  }
+  
+  if (prompt.includes('execute') || prompt.includes('Execute')) {
+    return 'Code executed successfully.\nOutput: Hello, World!';
+  }
+  
+  return 'AI response: Please configure your Base44 API credentials in .env file for actual AI functionality.';
+};
+
+export const base44 = {
+  entities: {
+    CodeFile: {
+      list: async (sort = '-updated_date') => {
+        // Try API first, fallback to localStorage
+        if (isApiConfigured()) {
+          try {
+            const files = await apiRequest(`/entities/codefile?sort=${sort}`);
+            return files;
+          } catch (error) {
+            console.warn('API request failed, using localStorage:', error);
+          }
+        }
+        
+        const files = getFiles();
+        if (sort === '-updated_date') {
+          return files.sort((a, b) => {
+            const aDate = new Date(a.updated_date || a.created_date || 0);
+            const bDate = new Date(b.updated_date || b.created_date || 0);
+            return bDate - aDate;
+          });
+        }
+        return files;
+      },
+      create: async (fileData) => {
+        const newFile = {
+          ...fileData,
+          id: `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          created_date: new Date().toISOString(),
+          updated_date: new Date().toISOString(),
+        };
+
+        // Try API first, fallback to localStorage
+        if (isApiConfigured()) {
+          try {
+            const created = await apiRequest('/entities/codefile', {
+              method: 'POST',
+              body: JSON.stringify(newFile),
+            });
+            return created;
+          } catch (error) {
+            console.warn('API request failed, using localStorage:', error);
+          }
+        }
+
+        const files = getFiles();
+        files.push(newFile);
+        saveFiles(files);
+        return newFile;
+      },
+      update: async (id, data) => {
+        const updateData = {
+          ...data,
+          updated_date: new Date().toISOString(),
+        };
+
+        // Try API first, fallback to localStorage
+        if (isApiConfigured()) {
+          try {
+            const updated = await apiRequest(`/entities/codefile/${id}`, {
+              method: 'PUT',
+              body: JSON.stringify(updateData),
+            });
+            return updated;
+          } catch (error) {
+            console.warn('API request failed, using localStorage:', error);
+          }
+        }
+
+        const files = getFiles();
+        const index = files.findIndex(f => f.id === id);
+        if (index !== -1) {
+          files[index] = {
+            ...files[index],
+            ...updateData,
+          };
+          saveFiles(files);
+          return files[index];
+        }
+        throw new Error('File not found');
+      },
+      delete: async (id) => {
+        // Try API first, fallback to localStorage
+        if (isApiConfigured()) {
+          try {
+            await apiRequest(`/entities/codefile/${id}`, {
+              method: 'DELETE',
+            });
+            return { id };
+          } catch (error) {
+            console.warn('API request failed, using localStorage:', error);
+          }
+        }
+
+        const files = getFiles();
+        const filtered = files.filter(f => f.id !== id);
+        saveFiles(filtered);
+        return { id };
+      }
+    }
+  },
+  integrations: {
+    Core: {
+      InvokeLLM: async ({ prompt, response_json_schema = null }) => {
+        console.log('Invoking LLM with prompt:', prompt.substring(0, 100) + '...');
+        
+        // Check if API is configured
+        if (!isApiConfigured()) {
+          console.warn('Base44 API not configured. Using mock responses. Set VITE_BASE44_API_KEY in .env file.');
+          return await generateMockAIResponse(prompt, response_json_schema);
+        }
+
+        try {
+          // Call Base44 LLM integration
+          const response = await apiRequest('/integrations/core/invoke-llm', {
+            method: 'POST',
+            body: JSON.stringify({
+              prompt,
+              response_json_schema,
+            }),
+          });
+          
+          return response;
+        } catch (error) {
+          console.error('LLM API request failed:', error);
+          // Fallback to mock if API fails
+          return await generateMockAIResponse(prompt, response_json_schema);
+        }
+      }
+    }
+  },
+  agents: {
+    createConversation: async ({ agent_name, metadata }) => {
+      const conversation = {
+        id: `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        agent_name,
+        metadata,
+        messages: [
+          {
+            role: 'assistant',
+            content: 'Hello! I\'m your AI coding assistant. How can I help you today?'
+          }
+        ],
+        created_at: new Date().toISOString()
+      };
+
+      // Try API first
+      if (isApiConfigured()) {
+        try {
+          const created = await apiRequest('/agents/conversations', {
+            method: 'POST',
+            body: JSON.stringify({
+              agent_name,
+              metadata,
+            }),
+          });
+          return created;
+        } catch (error) {
+          console.warn('API request failed, using localStorage:', error);
+        }
+      }
+      
+      // Store conversation in localStorage
+      const conversations = JSON.parse(localStorage.getItem('base44_conversations') || '[]');
+      conversations.push(conversation);
+      localStorage.setItem('base44_conversations', JSON.stringify(conversations));
+      
+      return conversation;
+    },
+    subscribeToConversation: (conversationId, callback) => {
+      let lastMessageCount = 0;
+      let unsubscribeWebSocket = null;
+
+      // If API is configured, try WebSocket connection
+      if (isApiConfigured() && BASE44_API_URL.startsWith('ws://') || BASE44_API_URL.startsWith('wss://')) {
+        try {
+          const wsUrl = BASE44_API_URL.replace(/^https?:/, BASE44_API_URL.includes('localhost') ? 'ws:' : 'wss:');
+          const ws = new WebSocket(`${wsUrl}/agents/conversations/${conversationId}/subscribe`);
+          
+          ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.messages && callback) {
+              callback(data);
+            }
+          };
+
+          ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+          };
+
+          unsubscribeWebSocket = () => ws.close();
+        } catch (error) {
+          console.warn('WebSocket connection failed, using polling:', error);
+        }
+      }
+
+      // Fallback to polling
+      const interval = setInterval(() => {
+        if (isApiConfigured()) {
+          // Poll API
+          apiRequest(`/agents/conversations/${conversationId}`)
+            .then((conv) => {
+              if (conv && callback) {
+                const currentMessageCount = conv.messages?.length || 0;
+                if (currentMessageCount !== lastMessageCount) {
+                  lastMessageCount = currentMessageCount;
+                  callback(conv);
+                }
+              }
+            })
+            .catch(() => {
+              // Fallback to localStorage on error
+              const conversations = JSON.parse(localStorage.getItem('base44_conversations') || '[]');
+              const conv = conversations.find(c => c.id === conversationId);
+              if (conv && callback) {
+                const currentMessageCount = conv.messages?.length || 0;
+                if (currentMessageCount !== lastMessageCount) {
+                  lastMessageCount = currentMessageCount;
+                  callback(conv);
+                }
+              }
+            });
+        } else {
+          // Use localStorage
+          const conversations = JSON.parse(localStorage.getItem('base44_conversations') || '[]');
+          const conv = conversations.find(c => c.id === conversationId);
+          if (conv && callback) {
+            const currentMessageCount = conv.messages?.length || 0;
+            if (currentMessageCount !== lastMessageCount) {
+              lastMessageCount = currentMessageCount;
+              callback(conv);
+            }
+          }
+        }
+      }, 1000);
+      
+      return () => {
+        clearInterval(interval);
+        if (unsubscribeWebSocket) {
+          unsubscribeWebSocket();
+        }
+      };
+    },
+    addMessage: async (conversation, message) => {
+      // Try API first
+      if (isApiConfigured()) {
+        try {
+          const response = await apiRequest(`/agents/conversations/${conversation.id}/messages`, {
+            method: 'POST',
+            body: JSON.stringify(message),
+          });
+          
+          // Wait for AI response
+          setTimeout(async () => {
+            try {
+              const updated = await apiRequest(`/agents/conversations/${conversation.id}`);
+              const conversations = JSON.parse(localStorage.getItem('base44_conversations') || '[]');
+              const convIndex = conversations.findIndex(c => c.id === conversation.id);
+              if (convIndex !== -1) {
+                conversations[convIndex] = updated;
+                localStorage.setItem('base44_conversations', JSON.stringify(conversations));
+              }
+            } catch (error) {
+              console.error('Failed to fetch updated conversation:', error);
+            }
+          }, 500);
+          
+          return response;
+        } catch (error) {
+          console.warn('API request failed, using localStorage:', error);
+        }
+      }
+
+      // Fallback to localStorage with mock response
+      const conversations = JSON.parse(localStorage.getItem('base44_conversations') || '[]');
+      const convIndex = conversations.findIndex(c => c.id === conversation.id);
+      
+      if (convIndex !== -1) {
+        conversations[convIndex].messages.push(message);
+        
+        // Generate AI response (mock or from API)
+        setTimeout(async () => {
+          let aiResponse;
+          if (isApiConfigured()) {
+            try {
+              const llmResponse = await base44.integrations.Core.InvokeLLM({
+                prompt: message.content,
+              });
+              aiResponse = {
+                role: 'assistant',
+                content: typeof llmResponse === 'string' ? llmResponse : JSON.stringify(llmResponse)
+              };
+            } catch (error) {
+              aiResponse = {
+                role: 'assistant',
+                content: 'I understand your question. This is a placeholder response. Please configure your Base44 API for actual AI responses.'
+              };
+            }
+          } else {
+            aiResponse = {
+              role: 'assistant',
+              content: 'I understand your question. This is a placeholder response. Please configure your Base44 API for actual AI responses.'
+            };
+          }
+          
+          conversations[convIndex].messages.push(aiResponse);
+          localStorage.setItem('base44_conversations', JSON.stringify(conversations));
+        }, 500);
+        
+        localStorage.setItem('base44_conversations', JSON.stringify(conversations));
+      }
+      
+      return conversation;
+    }
+  }
+};

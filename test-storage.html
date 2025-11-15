@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Test localStorage</title>
+</head>
+<body>
+  <h1>localStorage Test</h1>
+  <button onclick="testStorage()">Test Storage</button>
+  <button onclick="clearStorage()">Clear Storage</button>
+  <pre id="output"></pre>
+  <script>
+    function testStorage() {
+      const files = localStorage.getItem('base44_code_files');
+      document.getElementById('output').textContent = 'Files: ' + (files || 'null');
+    }
+    function clearStorage() {
+      localStorage.removeItem('base44_code_files');
+      localStorage.removeItem('base44_conversations');
+      document.getElementById('output').textContent = 'Storage cleared!';
+    }
+  </script>
+</body>
+</html>
